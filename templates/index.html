@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>图片标记工具</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        /* 图片容器和矩形框样式 (保持原有样式，但可以根据Bootstrap做细微调整) */
+        #image-container { position: relative; display: inline-block; }
+        #main-image { max-width: 100%; /* 响应式图片 */ }
+        .rectangle {
+            position: absolute;
+            border: 2px solid red;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-3">
+        <h1>图片标记工具</h1>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                加载图片文件夹
+            </div>
+            <div class="card-body">
+                <div class="form-group row">
+                    <label for="folder_path" class="col-sm-2 col-form-label">图片文件夹路径:</label>
+                    <div class="col-sm-10">
+                        <input type="text" class="form-control" id="folder_path" placeholder="输入图片文件夹路径">
+                    </div>
+                </div>
+                <button id="load_images" class="btn btn-primary">加载图片</button>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                图片显示区域
+            </div>
+            <div class="card-body">
+                <div id="image-container" class="text-center">
+                    <img id="main-image" src="" alt="图片" class="img-fluid">
+                </div>
+                <div class="mt-2">
+                    <button id="prev_btn" class="btn btn-secondary btn-sm">上一张</button>
+                    <button id="next_btn" class="btn btn-secondary btn-sm">下一张</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                矩形操作
+            </div>
+            <div class="card-body">
+                <button id="add_rect_btn" class="btn btn-info btn-sm mb-2">添加矩形</button>
+                <div id="rect_params" style="display:none;">
+                    <h5>编辑矩形参数</h5>
+                    <div class="form-group row">
+                        <label for="zoom_bool" class="col-sm-3 col-form-label">zoom_bool:</label>
+                        <div class="col-sm-9">
+                            <select class="form-control form-select" id="zoom_bool">
+                                <option value="True">True</option>
+                                <option value="False">False</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group row">
+                        <label for="color" class="col-sm-3 col-form-label">颜色:</label>
+                        <div class="col-sm-9">
+                            <select class="form-control form-select" id="color">
+                                <option value="red">red</option>
+                                <option value="blue">blue</option>
+                                <option value="green">green</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group row">
+                        <label for="line" class="col-sm-3 col-form-label">线宽:</label>
+                        <div class="col-sm-9">
+                            <input type="number" class="form-control" id="line" value="2">
+                        </div>
+                    </div>
+                    <div class="form-group row">
+                        <label for="scale" class="col-sm-3 col-form-label">倍率:</label>
+                        <div class="col-sm-9">
+                            <input type="number" class="form-control" step="0.1" id="scale" value="1.0">
+                        </div>
+                    </div>
+                    <div class="form-group row">
+                        <label for="place" class="col-sm-3 col-form-label">位置:</label>
+                        <div class="col-sm-9">
+                            <select class="form-control form-select" id="place">
+                                <option value="top right">top right</option>
+                                <option value="top left">top left</option>
+                                <option value="bottom right">bottom right</option>
+                                <option value="bottom left">bottom left</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="save_rect" class="btn btn-success btn-sm">保存矩形</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                YAML 保存与脚本执行
+            </div>
+            <div class="card-body">
+                <div class="form-group row">
+                    <label for="output_path" class="col-sm-2 col-form-label">输出目录:</label>
+                    <div class="col-sm-10">
+                        <input type="text" class="form-control" id="output_path" placeholder="输出目录">
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <label for="output_file" class="col-sm-2 col-form-label">输出文件名:</label>
+                    <div class="col-sm-10">
+                        <input type="text" class="form-control" id="output_file" placeholder="例如：config.yaml">
+                    </div>
+                </div>
+                <button id="save_yaml" class="btn btn-primary btn-sm">保存 YAML</button>
+                <button id="run_script" class="btn btn-success btn-sm">运行脚本</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 状态变量和保存参数的数组 (JavaScript 代码保持不变)
+        let addingRect = false;
+        let clickCount = 0;
+        let tempRect = {};
+        let region_list = [];
+        let zoom_bool_list = [];
+        let color_list = [];
+        let line_list = [];
+        let scale_list = [];
+        let place_list = [];
+
+        // 加载图片文件夹
+        document.getElementById("load_images").addEventListener("click", function(){
+            let folder_path = document.getElementById("folder_path").value;
+            fetch("/load_images", {
+                method: "POST",
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: "folder_path=" + encodeURIComponent(folder_path)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.error) {
+                    alert(data.error);
+                } else {
+                    document.getElementById("main-image").src = "/images/" + data.filename;
+                    clearRectangles();
+                }
+            });
+        });
+
+        // 图片导航
+        document.getElementById("prev_btn").addEventListener("click", function(){
+            fetch("/get_image?direction=prev")
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("main-image").src = "/images/" + data.filename;
+                clearRectangles();
+            });
+        });
+        document.getElementById("next_btn").addEventListener("click", function(){
+            fetch("/get_image?direction=next")
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("main-image").src = "/images/" + data.filename;
+                clearRectangles();
+            });
+        });
+
+        // 进入添加矩形模式
+        document.getElementById("add_rect_btn").addEventListener("click", function(){
+            addingRect = true;
+            clickCount = 0;
+            alert("请依次点击图片，选择矩形框的左上角和右下角。");
+        });
+
+        // 监听图片点击，记录点击时同时计算显示坐标与真实坐标
+        document.getElementById("main-image").addEventListener("click", function(e){
+            if(!addingRect) return;
+            let rect = this.getBoundingClientRect();
+            // 当前点击在显示图片中的坐标
+            let x = e.clientX - rect.left;
+            let y = e.clientY - rect.top;
+            // 计算显示图片与原始图片的比例
+            let displayedWidth = this.clientWidth;
+            let displayedHeight = this.clientHeight;
+            let naturalWidth = this.naturalWidth;
+            let naturalHeight = this.naturalHeight;
+            let scaleX = naturalWidth / displayedWidth;
+            let scaleY = naturalHeight / displayedHeight;
+            // 计算真实图片中的坐标
+            let realX = Math.round(x * scaleX);
+            let realY = Math.round(y * scaleY);
+            clickCount++;
+            if(clickCount === 1) {
+                tempRect.realX1 = realX;
+                tempRect.realY1 = realY;
+                tempRect.displayX1 = Math.round(x);
+                tempRect.displayY1 = Math.round(y);
+            } else if(clickCount === 2) {
+                tempRect.realX2 = realX;
+                tempRect.realY2 = realY;
+                tempRect.displayX2 = Math.round(x);
+                tempRect.displayY2 = Math.round(y);
+                addingRect = false;
+                clickCount = 0;
+                // 显示参数编辑区域
+                document.getElementById("rect_params").style.display = "block";
+            }
+        });
+
+        // 保存当前矩形及参数（使用真实坐标保存），并调用即时预览接口
+        document.getElementById("save_rect").addEventListener("click", function(){
+            // 保存真实坐标到配置
+            region_list.push([tempRect.realX1, tempRect.realY1, tempRect.realX2, tempRect.realY2]);
+            let zoom_val = document.getElementById("zoom_bool").value === "True";
+            zoom_bool_list.push(zoom_val);
+            color_list.push(document.getElementById("color").value);
+            line_list.push(parseInt(document.getElementById("line").value));
+            scale_list.push(parseFloat(document.getElementById("scale").value));
+            place_list.push(document.getElementById("place").value);
+            // 绘制矩形覆盖（使用显示坐标，仅用于页面效果）
+            drawRectangleOverlay(tempRect.displayX1, tempRect.displayY1, tempRect.displayX2, tempRect.displayY2, document.getElementById("color").value, document.getElementById("line").value);
+            // 隐藏参数编辑区域
+            document.getElementById("rect_params").style.display = "none";
+            // 调用即时预览，运行后端处理接口，并更新展示结果
+            processCurrent();
+        });
+
+        // 绘制矩形覆盖到图片上（使用显示坐标）
+        function drawRectangleOverlay(x1, y1, x2, y2, color, lineWidth) {
+            let img = document.getElementById("main-image");
+            let overlay = document.createElement("div");
+            overlay.className = "rectangle";
+            overlay.style.left = Math.min(x1, x2) + "px";
+            overlay.style.top = Math.min(y1, y2) + "px";
+            overlay.style.width = Math.abs(x2 - x1) + "px";
+            overlay.style.height = Math.abs(y2 - y1) + "px";
+            overlay.style.borderColor = color;
+            overlay.style.borderWidth = lineWidth + "px";
+            document.getElementById("image-container").appendChild(overlay);
+        }
+
+        // 清除所有绘制的矩形覆盖（如切换图片时调用）
+        function clearRectangles() {
+            let overlays = document.querySelectorAll(".rectangle");
+            overlays.forEach(function(el) {
+                el.parentNode.removeChild(el);
+            });
+        }
+
+        // 即时预览：调用后端 /process_current 接口处理当前图片，并将结果更新显示
+        function processCurrent(){
+            let payload = {
+                region_list: region_list,
+                zoom_bool: zoom_bool_list,
+                color_list: color_list,
+                line_list: line_list,
+                scale_list: scale_list,
+                place_list: place_list,
+                root_path: document.getElementById("folder_path").value
+            };
+            fetch("/process_current", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === "success"){
+                    document.getElementById("main-image").src = "data:image/jpeg;base64," + data.processed_image;
+                } else {
+                    alert(data.message);
+                }
+            });
+        }
+
+        // 保存 YAML 配置
+        document.getElementById("save_yaml").addEventListener("click", function(){
+            let output_path = document.getElementById("output_path").value;
+            let output_file = document.getElementById("output_file").value;
+            let payload = {
+                region_list: region_list,
+                zoom_bool: zoom_bool_list,
+                color_list: color_list,
+                line_list: line_list,
+                scale_list: scale_list,
+                place_list: place_list,
+                root_path: document.getElementById("folder_path").value,
+                output_path: output_path,
+                output_file: output_file
+            };
+            fetch("/save_yaml", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            });
+        });
+
+        // 运行脚本：调用后端接口处理整个文件夹图片（保存到磁盘），保留原有功能
+        document.getElementById("run_script").addEventListener("click", function(){
+            let output_path = document.getElementById("output_path").value;
+            let payload = {
+                region_list: region_list,
+                zoom_bool: zoom_bool_list,
+                color_list: color_list,
+                line_list: line_list,
+                scale_list: scale_list,
+                place_list: place_list,
+                root_path: document.getElementById("folder_path").value,
+                output_path: output_path
+            };
+            fetch("/run_script", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            });
+        });
+    </script>
+</body>
+</html>
